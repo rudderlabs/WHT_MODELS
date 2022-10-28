@@ -1,0 +1,5 @@
+model_folders: [models]
+name: sample_attribution
+profile: test
+schema_version: 1
+

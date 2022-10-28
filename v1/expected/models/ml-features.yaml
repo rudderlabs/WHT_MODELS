@@ -1,0 +1,123 @@
+resources:
+  domain_profile:
+    entity_key: user
+    resource_spec:
+      features:
+      - tablefeature: {description: Whether a domain is mql or not, name: is_mql,
+          table: salesForceLeadsTable, value: max(case when salesForceLeadsTable.mql__c
+            == 'True' then 1 else 0 end)}
+      - tablevar: {filter: (context_sources_job_run_id = (select top 1 context_sources_job_run_id
+            from blacklistDomains order by timestamp desc)), name: blacklistFlag,
+          table: blacklistDomains, value: max(case when exclude_reason is not null
+            then 1 else 0 end)}
+      - tablevar: {name: domainSummary_account_type, table: domainSummary, value: domainSummary.account_type}
+      - feature: {description: Whether a domain should be ignored for the analysis,
+          name: ignore_domain, value: max(case when blacklistFlag = 1 or domainSummary_account_type
+            like '%free%' then 1 else 0 end)}
+      - macro: {name: call_conversion, value: "type = 'Call' or tasksubtype='Call'\
+            \ or type like '%demo%') and \\ (rlike(lower(subject), '.*\\\\bcall\\\\\
+            b.*') or rlike(lower(subject), '.*\\\\bdemo\\\\b.*'"}
+      - tablevar: {filter: macro(call_conversion), name: salesCallEventTime, table: salesforceTasks,
+          value: min(activitydate)}
+      - feature: {name: sales_conversion_timestamp, value: salesCallEventTime}
+      - tablevar: {description: 'Salesforce touches are converted to one of following
+            events - sf_inbound_email, sf_outbound_email, sf_call, null', name: salesEvents,
+          table: salesforceTasks, value: "json_agg(activitydate, case when (type='Email'\
+            \ or tasksubtype = 'Email') then case when lower(subject) like '%[in]%'\
+            \ then 'sf_inbound_email' \\ else 'sf_outbound_email' end when macro(call_conversion)\
+            \ then 'sf_call' else null end as event)"}
+      - tablevar: {filter: timestamp < sales_conversion_timestamp and timestamp >
+            var('start_date'), name: page_events_var, table: websitePageVisits, value: "json_agg(timestamp,\
+            \ case when split_part(trim(context_page_path, '/'), '/', 1) in var('valid_page_paths')\
+            \ then split_part(trim(context_page_path, '/'), '/', 1) \\ else var('default_page_path')\
+            \ end as event)"}
+      - feature: {name: page_events, value: page_events_var}
+      - tablevar: {filter: variable_1 is null and timestamp < sales_conversion_timestamp
+            and timestamp > var('start_date'), name: webhookFormSubmit, table: webhookSource,
+          value: min(timestamp)}
+      - feature: {name: formSubmit, value: 'min(webhookFormSubmit, websiteFormSubmit)'}
+      id_stitching:
+        id_types: {domain: null, email: null, rudder_anon_id: null, salesforce_id: null}
+        inputs:
+        - name: salesforceTasks
+          ref:
+            ids:
+            - {sql: whoid, type: salesforce_id}
+            table: salesforce.task
+            timestamp_col: activitydate
+        - name: salesforceContact
+          ref:
+            ids:
+            - {sql: id, type: salesforce_id}
+            - {sql: "case when lower(email) like any ('%gmail%', '%yahoo%') then lower(email)\
+                \  else split_part(lower(email),'@',2) end", type: email}
+            table: salesforce.contact
+            timestamp_col: createddate
+        - name: websitePageVisits
+          ref:
+            ids:
+            - {sql: anonymous_id, type: rudder_anon_id}
+            - {sql: "case when lower(coalesce(context_traits_email, user_id)) like\
+                \ any ('%gmail%', '%yahoo%') then lower(coalesce(context_traits_email,\
+                \ user_id))  else split_part(lower(coalesce(context_traits_email,\
+                \ user_id)),'@',2) end", type: email}
+            table: autotrack.pages
+            timestamp_col: timestamp
+        - name: webhookSource
+          ref:
+            ids:
+            - {sql: anonymous_id, type: rudder_anon_id}
+            table: eric_db.webhook_source_event
+            timestamp_col: timestamp
+        - name: websiteSource
+          ref:
+            ids:
+            - {sql: anonymous_id, type: rudder_anon_id}
+            table: autotrack.form_submit
+            timestamp_col: timestamp
+        - name: blacklistDomains
+          ref:
+            ids:
+            - {sql: "case when lower(user_id) like any ('%gmail%', '%yahoo%') then\
+                \ lower(user_id)  else split_part(lower(user_id),'@',2) end", type: email}
+            table: eric_db.email_exclusion_list_rows
+            timestamp_col: timestamp
+        - name: domainSummary
+          ref:
+            ids:
+            - {sql: domain, type: domain}
+            table: analytics.agg_domain_summary
+            timestamp_col: first_event_sent_date
+        - name: webappIdentifies
+          ref:
+            ids:
+            - {sql: anonymous_id, type: rudder_anon_id}
+            - {sql: "case when lower(coalesce(context_traits_email, user_id)) like\
+                \ any ('%gmail%', '%yahoo%') then lower(coalesce(context_traits_email,\
+                \ user_id))  else split_part(lower(coalesce(context_traits_email,\
+                \ user_id)),'@',2) end", type: email}
+            table: webapp.identifies
+            timestamp_col: timestamp
+        - name: salesForceLeadsTable
+          ref:
+            ids:
+            - {sql: id, type: salesforce_id}
+            - {sql: "case when lower(user_id) like any ('%gmail%', '%yahoo%') then\
+                \ lower(user_id)  else split_part(lower(user_id),'@',2) end", type: email}
+            - {sql: "case when lower(email) like any ('%gmail%', '%yahoo%') then lower(email)\
+                \  else split_part(lower(email),'@',2) end", type: email}
+            table: salesforce.lead
+            timestamp_col: createddate
+        - name: autotrackIdentifies
+          ref:
+            ids:
+            - {sql: anonymous_id, type: rudder_anon_id}
+            - {sql: "case when lower(coalesce(context_traits_email, user_id)) like\
+                \ any ('%gmail%', '%yahoo%') then lower(coalesce(context_traits_email,\
+                \ user_id))  else split_part(lower(coalesce(context_traits_email,\
+                \ user_id)),'@',2) end", type: email}
+            table: autotrack.identifies
+            timestamp_col: timestamp
+      validity_time: 24h
+    resource_type: feature_table_model
+
