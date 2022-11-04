@@ -1,22 +1,12 @@
-# Project name
-name: sample_attribution
-
-# Project's yaml schema version
-schema_version: 6
-
-# WH Connection Profile to use.
-profile: test
-
-# Model folders to use.
-model_folders: 
-  - models
- 
-# Entities in this project and their ids.
 entities:
-  - name: user
-    id_types:
-      - name: main_id
-      - name: salesforce_id
-      - name: rudder_anon_id
-      - name: email
-      - name: domain
+  - id_types:
+      - {name: main_id}
+      - {name: salesforce_id}
+      - {name: rudder_anon_id}
+      - {name: email}
+      - {name: domain}
+    name: user
+model_folders: [models]
+name: sample_attribution
+profile: test
+schema_version: 9
